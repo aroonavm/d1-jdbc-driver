@@ -1,1275 +1,496 @@
 package org.isaacmcfadyen;
 
-import org.json.JSONObject;
-import org.json.JSONArray;
+import org.isaacmcfadyen.base.UnsupportedDatabaseMetaData;
 
-import java.io.BufferedReader;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.lang.reflect.Type;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.DatabaseMetaData;
+import java.sql.ResultSet;
+import java.sql.RowIdLifetime;
+import java.sql.SQLException;
+import java.sql.Types;
 import java.util.ArrayList;
-import java.util.Objects;
-import java.util.stream.Collectors;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
+import java.util.regex.Pattern;
 
-public class D1DatabaseMetaData extends D1Queryable implements DatabaseMetaData {
-    private final D1Connection parentConnection;
+/**
+ * Schema introspection over SQLite's `sqlite_master` and plain PRAGMA statements (D1 refuses the table-valued `pragma_*` functions).
+ * D1 has no catalogs or schemas, so those columns are NULL and the schema/catalog result sets are empty.
+ */
+final class D1DatabaseMetaData extends UnsupportedDatabaseMetaData {
+    private final D1Connection connection;
 
-    D1DatabaseMetaData(String ApiKey, String AccountId, String DatabaseUuid, D1Connection connection) {
-        super(ApiKey, AccountId, DatabaseUuid);
-        this.parentConnection = connection;
+    D1DatabaseMetaData(D1Connection connection) {
+        this.connection = connection;
     }
 
-    @Override
-    public boolean allProceduresAreCallable() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean allTablesAreSelectable() throws SQLException {
-        return true;
-    }
-
-    @Override
-    public String getURL() throws SQLException {
-        return String.format("jbdc:d1://%s", DatabaseUuid);
-    }
-
-    @Override
-    public String getUserName() throws SQLException {
-        throw new SQLException("Not implemented: getUserName()");
-    }
-
-    @Override
-    public boolean isReadOnly() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean nullsAreSortedHigh() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean nullsAreSortedLow() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean nullsAreSortedAtStart() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean nullsAreSortedAtEnd() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public String getDatabaseProductName() throws SQLException {
-        return "Cloudflare D1";
-    }
-
-    @Override
-    public String getDatabaseProductVersion() throws SQLException {
-        return null;
-    }
-
-    @Override
-    public String getDriverName() throws SQLException {
-        return "D1 JDBC Driver";
-    }
-
-    @Override
-    public String getDriverVersion() throws SQLException {
-        return "1.0";
-    }
-
-    @Override
-    public int getDriverMajorVersion() {
-        return 1;
-    }
-
-    @Override
-    public int getDriverMinorVersion() {
-        return 0;
-    }
-
-    @Override
-    public boolean usesLocalFiles() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean usesLocalFilePerTable() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsMixedCaseIdentifiers() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean storesUpperCaseIdentifiers() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean storesLowerCaseIdentifiers() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean storesMixedCaseIdentifiers() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsMixedCaseQuotedIdentifiers() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean storesUpperCaseQuotedIdentifiers() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean storesLowerCaseQuotedIdentifiers() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean storesMixedCaseQuotedIdentifiers() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public String getIdentifierQuoteString() throws SQLException {
-        return "\"";
-    }
-
-    @Override
-    public String getSQLKeywords() throws SQLException {
-        throw new SQLException("Not implemented: getSQLKeywords()");
-    }
-
-    @Override
-    public String getNumericFunctions() throws SQLException {
-        throw new SQLException("Not implemented: getNumericFunctions()");
-    }
-
-    @Override
-    public String getStringFunctions() throws SQLException {
-        throw new SQLException("Not implemented: getStringFunctions()");
-    }
-
-    @Override
-    public String getSystemFunctions() throws SQLException {
-        throw new SQLException("Not implemented: getSystemFunctions()");
-    }
-
-    @Override
-    public String getTimeDateFunctions() throws SQLException {
-        throw new SQLException("Not implemented: getTimeDateFunctions()");
-    }
-
-    @Override
-    public String getSearchStringEscape() throws SQLException {
-        return "\\";
-    }
-
-    @Override
-    public String getExtraNameCharacters() throws SQLException {
-        throw new SQLException("Not implemented: getExtraNameCharacters()");
-    }
-
-    @Override
-    public boolean supportsAlterTableWithAddColumn() throws SQLException {
-        return true;
-    }
-
-    @Override
-    public boolean supportsAlterTableWithDropColumn() throws SQLException {
-        return true;
-    }
-
-    @Override
-    public boolean supportsColumnAliasing() throws SQLException {
-        return true;
-    }
-
-    @Override
-    public boolean nullPlusNonNullIsNull() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsConvert() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsConvert(int fromType, int toType) throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsTableCorrelationNames() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsDifferentTableCorrelationNames() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsExpressionsInOrderBy() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsOrderByUnrelated() throws SQLException {
-        return true;
-    }
-
-    @Override
-    public boolean supportsGroupBy() throws SQLException {
-        return true;
-    }
-
-    @Override
-    public boolean supportsGroupByUnrelated() throws SQLException {
-        return true;
-    }
-
-    @Override
-    public boolean supportsGroupByBeyondSelect() throws SQLException {
-        return true;
-    }
-
-    @Override
-    public boolean supportsLikeEscapeClause() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsMultipleResultSets() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsMultipleTransactions() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsNonNullableColumns() throws SQLException {
-        return true;
-    }
-
-    @Override
-    public boolean supportsMinimumSQLGrammar() throws SQLException {
-        return true;
-    }
-
-    @Override
-    public boolean supportsCoreSQLGrammar() throws SQLException {
-        return true;
-    }
-
-    @Override
-    public boolean supportsExtendedSQLGrammar() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsANSI92EntryLevelSQL() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsANSI92IntermediateSQL() throws SQLException {
-        return false;
-    }
+    // ---- helpers
 
-    @Override
-    public boolean supportsANSI92FullSQL() throws SQLException {
-        return false;
+    private List<Object[]> query(String sql, Object... params) throws SQLException {
+        try (D1PreparedStatement ps = (D1PreparedStatement) connection.prepareStatement(sql)) {
+            for (int i = 0; i < params.length; i++) ps.setObject(i + 1, params[i]);
+            if (!ps.execute()) return new ArrayList<>();
+            List<Object[]> rows = new ArrayList<>();
+            try (ResultSet rs = ps.getResultSet()) {
+                int n = rs.getMetaData().getColumnCount();
+                while (rs.next()) {
+                    Object[] row = new Object[n];
+                    for (int c = 0; c < n; c++) row[c] = rs.getObject(c + 1);
+                    rows.add(row);
+                }
+            }
+            return rows;
+        }
     }
 
-    @Override
-    public boolean supportsIntegrityEnhancementFacility() throws SQLException {
-        return false;
+    private static ResultSet result(String[] columns, String[] types, List<Object[]> rows) {
+        return new D1ResultSet(null, Arrays.asList(columns), rows, types);
     }
 
-    @Override
-    public boolean supportsOuterJoins() throws SQLException {
-        return true;
+    private static ResultSet empty(String... columns) {
+        String[] types = new String[columns.length];
+        Arrays.fill(types, "TEXT");
+        return result(columns, types, new ArrayList<>());
     }
 
-    @Override
-    public boolean supportsFullOuterJoins() throws SQLException {
-        return false;
+    /** SQL LIKE pattern to a regex; JDBC's default escape is backslash. */
+    private static Pattern like(String pattern) {
+        StringBuilder re = new StringBuilder();
+        for (int i = 0; i < pattern.length(); i++) {
+            char c = pattern.charAt(i);
+            if (c == '\\' && i + 1 < pattern.length()) re.append(Pattern.quote(String.valueOf(pattern.charAt(++i))));
+            else if (c == '%') re.append(".*");
+            else if (c == '_') re.append('.');
+            else re.append(Pattern.quote(String.valueOf(c)));
+        }
+        return Pattern.compile(re.toString(), Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
     }
 
-    @Override
-    public boolean supportsLimitedOuterJoins() throws SQLException {
-        return false;
+    private static boolean matches(Pattern p, Object v) {
+        return p == null || (v != null && p.matcher(v.toString()).matches());
     }
 
-    @Override
-    public String getSchemaTerm() throws SQLException {
-        return null;
+    private static boolean isSystem(String name) {
+        String n = name.toLowerCase(Locale.ROOT);
+        return n.startsWith("sqlite_");
     }
 
-    @Override
-    public String getProcedureTerm() throws SQLException {
-        return "Procedure";
+    private static String str(Object o) {
+        return o == null ? null : o.toString();
     }
 
-    @Override
-    public String getCatalogTerm() throws SQLException {
-        return null;
+    private static long num(Object o) {
+        return o instanceof Number n ? n.longValue() : 0L;
     }
 
-    @Override
-    public boolean isCatalogAtStart() throws SQLException {
-        return false;
+    private static String typeCol(String type) {
+        return type.replaceAll("\\(.*\\)", "").trim().toUpperCase(Locale.ROOT);
     }
 
-    @Override
-    public String getCatalogSeparator() throws SQLException {
-        throw new SQLException("Not implemented: getCatalogSeparator()");
-    }
-
-    @Override
-    public boolean supportsSchemasInDataManipulation() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsSchemasInProcedureCalls() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsSchemasInTableDefinitions() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsSchemasInIndexDefinitions() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsSchemasInPrivilegeDefinitions() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsCatalogsInDataManipulation() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsCatalogsInProcedureCalls() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsCatalogsInTableDefinitions() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsCatalogsInIndexDefinitions() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsCatalogsInPrivilegeDefinitions() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsPositionedDelete() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsPositionedUpdate() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsSelectForUpdate() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsStoredProcedures() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsSubqueriesInComparisons() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsSubqueriesInExists() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsSubqueriesInIns() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsSubqueriesInQuantifieds() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsCorrelatedSubqueries() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsUnion() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsUnionAll() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsOpenCursorsAcrossCommit() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsOpenCursorsAcrossRollback() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsOpenStatementsAcrossCommit() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsOpenStatementsAcrossRollback() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public int getMaxBinaryLiteralLength() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getMaxCharLiteralLength() throws SQLException {
-        return 0;
-    }
+    // ---- tables
 
-    @Override
-    public int getMaxColumnNameLength() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getMaxColumnsInGroupBy() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getMaxColumnsInIndex() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getMaxColumnsInOrderBy() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getMaxColumnsInSelect() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getMaxColumnsInTable() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getMaxConnections() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getMaxCursorNameLength() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getMaxIndexLength() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getMaxSchemaNameLength() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getMaxProcedureNameLength() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getMaxCatalogNameLength() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getMaxRowSize() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public boolean doesMaxRowSizeIncludeBlobs() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public int getMaxStatementLength() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getMaxStatements() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getMaxTableNameLength() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getMaxTablesInSelect() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getMaxUserNameLength() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getDefaultTransactionIsolation() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public boolean supportsTransactions() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsTransactionIsolationLevel(int level) throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsDataDefinitionAndDataManipulationTransactions() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsDataManipulationTransactionsOnly() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean dataDefinitionCausesTransactionCommit() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean dataDefinitionIgnoredInTransactions() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public ResultSet getProcedures(String catalog, String schemaPattern, String procedureNamePattern) throws SQLException {
-        throw new SQLException("Not implemented: getProcedures(String catalog, String schemaPattern, String procedureNamePattern)");
-    }
-
-    @Override
-    public ResultSet getProcedureColumns(String catalog, String schemaPattern, String procedureNamePattern, String columnNamePattern) throws SQLException {
-        throw new SQLException("Not implemented: getProcedureColumns(String catalog, String schemaPattern, String procedureNamePattern, String columnNamePattern)");
-    }
+    private static final String[] TABLE_COLS = {"TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "TABLE_TYPE", "REMARKS", "TYPE_CAT", "TYPE_SCHEM", "TYPE_NAME", "SELF_REFERENCING_COL_NAME", "REF_GENERATION"};
 
     @Override
     public ResultSet getTables(String catalog, String schemaPattern, String tableNamePattern, String[] types) throws SQLException {
-        JSONObject json = queryDatabase("PRAGMA table_list");
-        JSONArray tables = json.getJSONArray("results");
-
-        ArrayList<String> columnNames = new ArrayList<>();
-        ArrayList<ArrayList<Object>> rows = new ArrayList<>();
-
-        // Define the preset columns.
-        columnNames.add("TABLE_CAT");
-        columnNames.add("TABLE_SCHEM");
-        columnNames.add("TABLE_NAME");
-        columnNames.add("TABLE_TYPE");
-
-        for (int i = 0; i < tables.length(); i++) {
-            ArrayList<Object> row = new ArrayList<>();
-            JSONObject table = tables.getJSONObject(i);
-
-            String tableCatalog = null;
-            String tableSchema = table.getString("schema");
-            String tableName = table.getString("name");
-            String tableType = table.getString("type");
-
-            row.add(tableCatalog);
-            row.add(tableSchema);
-            row.add(tableName);
-            row.add(tableType);
-
-            rows.add(row);
+        Pattern name = tableNamePattern == null ? null : like(tableNamePattern);
+        List<Object[]> rows = new ArrayList<>();
+        for (Object[] r : query("SELECT name, type FROM sqlite_master WHERE type IN ('table','view') ORDER BY name")) {
+            String table = str(r[0]);
+            if (!matches(name, table) || table.toLowerCase(Locale.ROOT).startsWith("_cf_")) continue; // _cf_KV is Cloudflare-internal
+            String type = isSystem(table) ? "SYSTEM TABLE" : "view".equals(r[1]) ? "VIEW" : "TABLE";
+            if (types != null && Arrays.stream(types).noneMatch(type::equalsIgnoreCase)) continue;
+            rows.add(new Object[]{null, null, table, type, null, null, null, null, null, null});
         }
-
-        JSONObject stringType = new JSONObject();
-        stringType.put("type", "TEXT");
-        JSONArray columnSchema = new JSONArray();
-        columnSchema.put(stringType);
-        columnSchema.put(stringType);
-        columnSchema.put(stringType);
-        columnSchema.put(stringType);
-
-        return new D1ResultSet(ApiKey, AccountId, DatabaseUuid, columnNames, rows, columnSchema);
+        String[] t = new String[TABLE_COLS.length];
+        Arrays.fill(t, "TEXT");
+        return result(TABLE_COLS, t, rows);
     }
 
     @Override
-    public ResultSet getSchemas() throws SQLException {
-        ArrayList<String> columnNames = new ArrayList<>();
-        ArrayList<ArrayList<Object>> rows = new ArrayList<>();
-
-        columnNames.add("TABLE_SCHEM");
-        columnNames.add("TABLE_CATALOG");
-
-        ArrayList<Object> row = new ArrayList<>();
-        row.add(null);
-        row.add(null);
-        rows.add(row);
-
-        JSONObject stringType = new JSONObject();
-        stringType.put("type", "TEXT");
-        JSONArray columnSchema = new JSONArray();
-        columnSchema.put(stringType);
-        columnSchema.put(stringType);
-
-        return new D1ResultSet(ApiKey, AccountId, DatabaseUuid, columnNames, rows, columnSchema);
+    public ResultSet getTableTypes() {
+        List<Object[]> rows = new ArrayList<>();
+        for (String t : new String[]{"SYSTEM TABLE", "TABLE", "VIEW"}) rows.add(new Object[]{t});
+        return result(new String[]{"TABLE_TYPE"}, new String[]{"TEXT"}, rows);
     }
 
-    @Override
-    public ResultSet getCatalogs() throws SQLException {
-        return null;
+    @Override public ResultSet getSchemas() { return empty("TABLE_SCHEM", "TABLE_CATALOG"); }
+    @Override public ResultSet getSchemas(String catalog, String schemaPattern) { return empty("TABLE_SCHEM", "TABLE_CATALOG"); }
+    @Override public ResultSet getCatalogs() { return empty("TABLE_CAT"); }
+
+    // ---- PRAGMA helpers (D1 allows PRAGMA statements but not the pragma_*() table-valued functions)
+
+    private static final int PRAGMAS_PER_REQUEST = 25;
+
+    private static String quote(String identifier) {
+        return "\"" + identifier.replace("\"", "\"\"") + "\"";
     }
 
-    @Override
-    public ResultSet getTableTypes() throws SQLException {
-        ArrayList<String> columnNames = new ArrayList<>();
-        ArrayList<ArrayList<Object>> rows = new ArrayList<>();
-
-        columnNames.add("TABLE_TYPE");
-        ArrayList<Object> row = new ArrayList<>();
-        row.add("TABLE");
-        rows.add(row);
-
-        JSONObject stringType = new JSONObject();
-        stringType.put("type", "TEXT");
-        JSONArray columnSchema = new JSONArray();
-        columnSchema.put(stringType);
-
-        return new D1ResultSet(ApiKey, AccountId, DatabaseUuid, columnNames, rows, columnSchema);
+    private static List<java.util.Map<String, Object>> rowsOf(ResultSet rs) throws SQLException {
+        List<java.util.Map<String, Object>> out = new ArrayList<>();
+        java.sql.ResultSetMetaData md = rs.getMetaData();
+        while (rs.next()) {
+            java.util.Map<String, Object> row = new java.util.HashMap<>();
+            for (int c = 1; c <= md.getColumnCount(); c++) row.put(md.getColumnLabel(c).toLowerCase(Locale.ROOT), rs.getObject(c));
+            out.add(row);
+        }
+        return out;
     }
+
+    /**
+     * `PRAGMA <name>(<arg>)` for each arg, as column-name -> value maps aligned with args. Several PRAGMAs share one HTTP request
+     * (a whole-schema load would otherwise cost one request per table, against Cloudflare's API rate limit).
+     */
+    private List<List<java.util.Map<String, Object>>> pragma(String name, List<String> args) throws SQLException {
+        List<List<java.util.Map<String, Object>>> out = new ArrayList<>();
+        for (int from = 0; from < args.size(); from += PRAGMAS_PER_REQUEST) {
+            List<String> chunk = args.subList(from, Math.min(args.size(), from + PRAGMAS_PER_REQUEST));
+            List<List<java.util.Map<String, Object>>> got = null;
+            if (chunk.size() > 1) {
+                StringBuilder sql = new StringBuilder();
+                for (String arg : chunk) sql.append(sql.length() == 0 ? "" : "; ").append("PRAGMA ").append(name).append('(').append(quote(arg)).append(')');
+                try (java.sql.Statement st = connection.createStatement()) {
+                    got = new ArrayList<>();
+                    boolean isResultSet = st.execute(sql.toString());
+                    if (((D1Statement) st).resultCount() != chunk.size()) throw new SQLException("D1 answered " + ((D1Statement) st).resultCount() + " of " + chunk.size() + " statements");
+                    for (int i = 0; i < chunk.size(); i++) {
+                        if (i > 0) isResultSet = st.getMoreResults();
+                        if (isResultSet) try (ResultSet rs = st.getResultSet()) { got.add(rowsOf(rs)); } else got.add(new ArrayList<>());
+                    }
+                } catch (SQLException e) {
+                    String state = e.getSQLState() == null ? "" : e.getSQLState();
+                    if (state.equals("HYT00") || state.equals("70100") || state.startsWith("08")) throw e; // timeout, cancel, unreachable: stop
+                    got = null; // one bad table must not hide the others: fall back to one request each
+                }
+            }
+            if (got == null) {
+                got = new ArrayList<>();
+                for (String arg : chunk) {
+                    try (java.sql.Statement st = connection.createStatement()) {
+                        got.add(st.execute("PRAGMA " + name + "(" + quote(arg) + ")") ? rowsOf(st.getResultSet()) : new ArrayList<>());
+                    }
+                }
+            }
+            out.addAll(got);
+        }
+        return out;
+    }
+
+    private List<java.util.Map<String, Object>> pragma(String name, String arg) throws SQLException {
+        return pragma(name, List.of(arg)).get(0);
+    }
+
+    /** Names of tables (and views unless tablesOnly) matching an exact name (any case), or all of them when name is null. */
+    private List<String> tableNames(String exact, Pattern pattern, boolean tablesOnly) throws SQLException {
+        // JDBC says the table argument of the key/index calls is exact, but DBeaver passes "%" to load a whole schema at once.
+        if (exact != null && exact.contains("%")) {
+            pattern = like(exact);
+            exact = null;
+        }
+        List<String> out = new ArrayList<>();
+        for (Object[] r : query("SELECT name FROM sqlite_master WHERE type IN ('table'" + (tablesOnly ? "" : ",'view'") + ") ORDER BY name")) {
+            String n = str(r[0]);
+            if (n.toLowerCase(Locale.ROOT).startsWith("_cf_")) continue; // Cloudflare-internal; D1 refuses PRAGMAs on it
+            if ((exact == null || exact.equalsIgnoreCase(n)) && matches(pattern, n)) out.add(n);
+        }
+        return out;
+    }
+
+    // ---- columns
+
+    private static final String[] COLUMN_COLS = {"TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "COLUMN_NAME", "DATA_TYPE", "TYPE_NAME", "COLUMN_SIZE", "BUFFER_LENGTH",
+            "DECIMAL_DIGITS", "NUM_PREC_RADIX", "NULLABLE", "REMARKS", "COLUMN_DEF", "SQL_DATA_TYPE", "SQL_DATETIME_SUB", "CHAR_OCTET_LENGTH", "ORDINAL_POSITION",
+            "IS_NULLABLE", "SCOPE_CATALOG", "SCOPE_SCHEMA", "SCOPE_TABLE", "SOURCE_DATA_TYPE", "IS_AUTOINCREMENT", "IS_GENERATEDCOLUMN"};
+    private static final String[] COLUMN_TYPES = {"TEXT", "TEXT", "TEXT", "TEXT", "INTEGER", "TEXT", "INTEGER", "INTEGER", "INTEGER", "INTEGER", "INTEGER", "TEXT", "TEXT",
+            "INTEGER", "INTEGER", "INTEGER", "INTEGER", "TEXT", "TEXT", "TEXT", "TEXT", "INTEGER", "TEXT", "TEXT"};
+    private static final Pattern SIZE = Pattern.compile("\\(\\s*(\\d+)\\s*(?:,\\s*(\\d+)\\s*)?\\)");
 
     @Override
     public ResultSet getColumns(String catalog, String schemaPattern, String tableNamePattern, String columnNamePattern) throws SQLException {
-        if(tableNamePattern.length() == 0) {
-            return null;
-        }
-        System.out.println(tableNamePattern);
-        System.out.println("PRAGMA table_info(" + tableNamePattern.replaceAll("\\\\", "") + ")");
-        String command = "PRAGMA table_info(" + tableNamePattern.replaceAll("\\\\", "") + ")";
-        JSONObject json = queryDatabase(command);
-        JSONArray results = json.getJSONArray("results");
-
-        ArrayList<String> columnNames = new ArrayList<>();
-        ArrayList<ArrayList<Object>> rows = new ArrayList<>();
-
-        columnNames.add("TABLE_CAT");
-        columnNames.add("TABLE_SCHEM");
-        columnNames.add("TABLE_NAME");
-        columnNames.add("COLUMN_NAME");
-        columnNames.add("DATA_TYPE");
-        columnNames.add("TYPE_NAME");
-        columnNames.add("COLUMN_SIZE");
-        columnNames.add("BUFFER_LENGTH");
-        columnNames.add("DECIMAL_DIGITS");
-        columnNames.add("NUM_PREC_RADIX");
-        columnNames.add("NULLABLE");
-        columnNames.add("REMARKS");
-        columnNames.add("COLUMN_DEF");
-        columnNames.add("SQL_DATA_TYPE");
-        columnNames.add("SQL_DATETIME_SUB");
-        columnNames.add("CHAR_OCTET_LENGTH");
-        columnNames.add("ORDINAL_POSITION");
-        columnNames.add("IS_NULLABLE");
-        columnNames.add("SCOPE_CATLOG");
-        columnNames.add("SCOPE_SCHEMA");
-        columnNames.add("SCOPE_TABLE");
-        columnNames.add("SOURCE_DATA_TYPE");
-        columnNames.add("IS_AUTOINCREMENT");
-        columnNames.add("IS_GENERATEDCOLUMN");
-
-        for (int i = 0; i < results.length(); i++) {
-            JSONObject column = results.getJSONObject(i);
-            ArrayList<Object> row = new ArrayList<>();
-
-            // TABLE_CAT
-            row.add(null);
-            // TABLE_SCHEM
-            row.add(null);
-            // TABLE_NAME
-            row.add(tableNamePattern);
-            // COLUMN_NAME
-            row.add(column.getString("name"));
-            // DATA_TYPE
-            String type = column.getString("type");
-            if (type.contains("CHAR") || type.contains("CLOB") || type.contains("TEXT")) {
-                row.add(Types.VARCHAR);
-            } else if (type.contains("INT")) {
-                row.add(Types.INTEGER);
-            } else if (type.contains("REAL") || type.contains("DOB") || type.contains("FLOA")) {
-                row.add(Types.DOUBLE);
-            } else if (type.contains("BLOB") || type.length() == 0) {
-                row.add(Types.BLOB);
-            } else {
-                row.add(Types.NUMERIC);
+        Pattern tables = tableNamePattern == null ? null : like(tableNamePattern);
+        Pattern columns = columnNamePattern == null ? null : like(columnNamePattern);
+        List<Object[]> rows = new ArrayList<>();
+        List<String> names = tableNames(null, tables, false);
+        List<List<java.util.Map<String, Object>>> infos = pragma("table_info", names);
+        for (int t = 0; t < names.size(); t++) {
+            String table = names.get(t);
+            List<java.util.Map<String, Object>> info = infos.get(t);
+            long pkColumns = info.stream().filter(c -> num(c.get("pk")) > 0).count();
+            for (java.util.Map<String, Object> c : info) {
+                String column = str(c.get("name"));
+                if (!matches(columns, column)) continue;
+                String declared = c.get("type") == null ? "" : str(c.get("type"));
+                java.util.regex.Matcher size = SIZE.matcher(declared);
+                boolean sized = size.find();
+                // SQLite lets non-INTEGER primary keys hold NULL for legacy reasons, but clients (DBeaver) only accept a key
+                // as a row identifier when its columns are NOT NULL, so key columns are reported as such.
+                boolean notNull = num(c.get("notnull")) != 0 || num(c.get("pk")) > 0;
+                boolean autoIncrement = num(c.get("pk")) == 1 && pkColumns == 1 && "INTEGER".equalsIgnoreCase(declared.trim());
+                rows.add(new Object[]{null, null, table, column, (long) D1Types.sqlType(declared), declared.isEmpty() ? "" : typeCol(declared),
+                        sized ? Long.parseLong(size.group(1)) : 0L, null, sized && size.group(2) != null ? Long.parseLong(size.group(2)) : 0L, 10L,
+                        (long) (notNull ? DatabaseMetaData.columnNoNulls : DatabaseMetaData.columnNullable), null, c.get("dflt_value"), null, null, 0L,
+                        num(c.get("cid")) + 1, notNull ? "NO" : "YES", null, null, null, null, autoIncrement ? "YES" : "NO", "NO"});
             }
-            // TYPE_NAME
-            row.add(column.getString("type"));
-            // COLUMN_SIZE
-            row.add(null);
-            // BUFFER_LENGTH
-            row.add(null);
-            // DECIMAL_DIGITS
-            row.add(null);
-            // NUM_PREC_RADIX
-            row.add(null);
-            // NULLABLE
-            row.add(column.getInt("notnull") == 0 ? columnNullable : columnNoNulls);
-            // REMARKS
-            row.add(null);
-            // COLUMN_DEF
-            Object columnDef = column.get("dflt_value");
-            if (columnDef == JSONObject.NULL) {
-                row.add(null);
-            } else {
-                if(type.contains("REAL") || type.contains("DOB") || type.contains("FLOA") || type.contains("INT")) {
-                    row.add(columnDef.toString());
-                } else {
-                    row.add("'" + columnDef.toString() + "'");
-                }
-            }
-            // SQL_DATA_TYPE
-            row.add(null);
-            // SQL_DATETIME_SUB
-            row.add(null);
-            // CHAR_OCTET_LENGTH
-            row.add(null);
-            // ORDINAL_POSITION
-            row.add(i + 1);
-            // IS_NULLABLE
-            row.add(column.getInt("notnull") == 0 ? "YES" : "NO");
-            // SCOPE_CATLOG
-            row.add(null);
-            // SCOPE_SCHEMA
-            row.add(null);
-            // SCOPE_TABLE
-            row.add(null);
-            // SOURCE_DATA_TYPE
-            row.add(null);
-            // IS_AUTOINCREMENT
-            row.add("");
-            // IS_GENERATEDCOLUMN
-            row.add("");
-
-            rows.add(row);
         }
-
-        JSONObject stringType = new JSONObject();
-        stringType.put("type", "TEXT");
-        JSONObject intType = new JSONObject();
-        intType.put("type", "INTEGER");
-
-        JSONArray columnSchema = new JSONArray();
-        // TABLE_CAT
-        columnSchema.put(stringType);
-        // TABLE_SCHEM
-        columnSchema.put(stringType);
-        // TABLE_NAME
-        columnSchema.put(stringType);
-        // COLUMN_NAME
-        columnSchema.put(stringType);
-        // DATA_TYPE
-        columnSchema.put(intType);
-        // TYPE_NAME
-        columnSchema.put(stringType);
-        // COLUMN_SIZE
-        columnSchema.put(intType);
-        // BUFFER_LENGTH
-        columnSchema.put(intType);
-        // DECIMAL_DIGITS
-        columnSchema.put(intType);
-        // NUM_PREC_RADIX
-        columnSchema.put(intType);
-        // NULLABLE
-        columnSchema.put(intType);
-        // REMARKS
-        columnSchema.put(stringType);
-        // COLUMN_DEF
-        columnSchema.put(stringType);
-        // SQL_DATA_TYPE
-        columnSchema.put(intType);
-        // SQL_DATETIME_SUB
-        columnSchema.put(intType);
-        // CHAR_OCTET_LENGTH
-        columnSchema.put(intType);
-        // ORDINAL_POSITION
-        columnSchema.put(intType);
-        // IS_NULLABLE
-        columnSchema.put(stringType);
-        // SCOPE_CATLOG
-        columnSchema.put(stringType);
-        // SCOPE_SCHEMA
-        columnSchema.put(stringType);
-        // SCOPE_TABLE
-        columnSchema.put(stringType);
-        // SOURCE_DATA_TYPE
-        columnSchema.put(intType);
-        // IS_AUTOINCREMENT
-        columnSchema.put(stringType);
-        // IS_GENERATEDCOLUMN
-        columnSchema.put(stringType);
-
-        return new D1ResultSet(ApiKey, AccountId, DatabaseUuid, columnNames, rows, columnSchema);
+        return result(COLUMN_COLS, COLUMN_TYPES, rows);
     }
 
-    @Override
-    public ResultSet getColumnPrivileges(String catalog, String schema, String table, String columnNamePattern) throws SQLException {
-        throw new SQLException("Not implemented: getColumnPrivileges()");
-    }
+    // ---- keys and indexes
 
-    @Override
-    public ResultSet getTablePrivileges(String catalog, String schemaPattern, String tableNamePattern) throws SQLException {
-        throw new SQLException("Not implemented: getTablePrivileges()");
-    }
+    private static final String[] PK_COLS = {"TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "COLUMN_NAME", "KEY_SEQ", "PK_NAME"};
 
-    @Override
-    public ResultSet getBestRowIdentifier(String catalog, String schema, String table, int scope, boolean nullable) throws SQLException {
-        throw new SQLException("Not implemented: getBestRowIdentifier()");
-    }
-
-    @Override
-    public ResultSet getVersionColumns(String catalog, String schema, String table) throws SQLException {
-        throw new SQLException("Not implemented: getVersionColumns()");
+    private static List<Object[]> primaryKeyRows(String table, List<java.util.Map<String, Object>> info) {
+        List<java.util.Map<String, Object>> keys = new ArrayList<>();
+        for (java.util.Map<String, Object> c : info) if (num(c.get("pk")) > 0) keys.add(c);
+        keys.sort(java.util.Comparator.comparingLong(c -> num(c.get("pk"))));
+        List<Object[]> rows = new ArrayList<>();
+        for (java.util.Map<String, Object> k : keys) rows.add(new Object[]{null, null, table, k.get("name"), num(k.get("pk")), "PRIMARY"});
+        return rows;
     }
 
     @Override
     public ResultSet getPrimaryKeys(String catalog, String schema, String table) throws SQLException {
-        JSONObject results = queryDatabase("PRAGMA table_info(" + table + ")");
-        JSONArray columns = results.getJSONArray("results");
+        List<Object[]> rows = new ArrayList<>();
+        List<String> names = tableNames(table, null, true);
+        List<List<java.util.Map<String, Object>>> infos = pragma("table_info", names);
+        for (int i = 0; i < names.size(); i++) rows.addAll(primaryKeyRows(names.get(i), infos.get(i)));
+        return result(PK_COLS, new String[]{"TEXT", "TEXT", "TEXT", "TEXT", "INTEGER", "TEXT"}, rows);
+    }
 
-        // Find the column labelled PrimaryKey.
-        JSONObject primaryKeyColumn = null;
-        for (int i = 0; i < columns.length(); i++) {
-            JSONObject column = columns.getJSONObject(i);
-            if (column.getInt("pk") == 1) {
-                primaryKeyColumn = column;
-                break;
+    private static final String[] FK_COLS = {"PKTABLE_CAT", "PKTABLE_SCHEM", "PKTABLE_NAME", "PKCOLUMN_NAME", "FKTABLE_CAT", "FKTABLE_SCHEM", "FKTABLE_NAME", "FKCOLUMN_NAME",
+            "KEY_SEQ", "UPDATE_RULE", "DELETE_RULE", "FK_NAME", "PK_NAME", "DEFERRABILITY"};
+    private static final String[] FK_TYPES = {"TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "INTEGER", "INTEGER", "INTEGER", "TEXT", "TEXT", "INTEGER"};
+
+    private static long rule(Object action) {
+        String a = action == null ? "" : action.toString().toUpperCase(Locale.ROOT);
+        switch (a) {
+            case "CASCADE": return DatabaseMetaData.importedKeyCascade;
+            case "SET NULL": return DatabaseMetaData.importedKeySetNull;
+            case "SET DEFAULT": return DatabaseMetaData.importedKeySetDefault;
+            case "RESTRICT": return DatabaseMetaData.importedKeyRestrict;
+            default: return DatabaseMetaData.importedKeyNoAction;
+        }
+    }
+
+    /** Foreign keys of the tables matching `child` (referencing side) that point at `parent` (referenced side); null means any. */
+    private List<Object[]> foreignKeys(String child, String parent) throws SQLException {
+        Pattern parentPattern = parent != null && parent.contains("%") ? like(parent) : null;
+        List<String> tables = tableNames(child, null, true);
+        List<List<java.util.Map<String, Object>>> lists = pragma("foreign_key_list", tables);
+        // An FK without a target column references the parent's primary key; look those parents up (once each, in one request).
+        java.util.Set<String> needPk = new java.util.LinkedHashSet<>();
+        for (List<java.util.Map<String, Object>> list : lists) {
+            for (java.util.Map<String, Object> f : list) if (f.get("to") == null && wanted(parent, parentPattern, str(f.get("table")))) needPk.add(str(f.get("table")));
+        }
+        List<String> parents = new ArrayList<>(needPk);
+        java.util.Map<String, List<Object[]>> parentKeys = new java.util.HashMap<>();
+        List<List<java.util.Map<String, Object>>> parentInfos = pragma("table_info", parents);
+        for (int i = 0; i < parents.size(); i++) parentKeys.put(parents.get(i), primaryKeyRows(parents.get(i), parentInfos.get(i)));
+
+        List<Object[]> rows = new ArrayList<>();
+        for (int t = 0; t < tables.size(); t++) {
+            for (java.util.Map<String, Object> f : lists.get(t)) {
+                String target = str(f.get("table"));
+                if (!wanted(parent, parentPattern, target)) continue;
+                String to = str(f.get("to"));
+                if (to == null) {
+                    List<Object[]> pk = parentKeys.getOrDefault(target, List.of());
+                    int seq = (int) num(f.get("seq"));
+                    to = seq < pk.size() ? str(pk.get(seq)[3]) : null;
+                }
+                rows.add(new Object[]{null, null, target, to, null, null, tables.get(t), f.get("from"), num(f.get("seq")) + 1, rule(f.get("on_update")), rule(f.get("on_delete")),
+                        "fk_" + tables.get(t) + "_" + f.get("id"), null, (long) DatabaseMetaData.importedKeyNotDeferrable});
             }
         }
+        return rows;
+    }
 
-        if(primaryKeyColumn == null) {
-            return null;
-        }
-
-        ArrayList<String> columnNames = new ArrayList<>();
-        columnNames.add("TABLE_CAT");
-        columnNames.add("TABLE_SCHEM");
-        columnNames.add("TABLE_NAME");
-        columnNames.add("COLUMN_NAME");
-        columnNames.add("KEY_SEQ");
-        columnNames.add("PK_NAME");
-
-        ArrayList<ArrayList<Object>> rows = new ArrayList<>();
-        ArrayList<Object> row = new ArrayList<>();
-        row.add(null);
-        row.add(null);
-        row.add(table);
-        row.add(primaryKeyColumn.getString("name"));
-        row.add(1);
-        row.add(primaryKeyColumn.getString("name"));
-        rows.add(row);
-
-        JSONObject stringType = new JSONObject();
-        stringType.put("type", "TEXT");
-        JSONObject intType = new JSONObject();
-        intType.put("type", "INTEGER");
-
-        JSONArray columnSchema = new JSONArray();
-        // TABLE_CAT
-        columnSchema.put(stringType);
-        // TABLE_SCHEM
-        columnSchema.put(stringType);
-        // TABLE_NAME
-        columnSchema.put(stringType);
-        // COLUMN_NAME
-        columnSchema.put(stringType);
-        // KEY_SEQ
-        columnSchema.put(intType);
-        // PK_NAME
-        columnSchema.put(stringType);
-
-        return new D1ResultSet(ApiKey, AccountId, DatabaseUuid, columnNames, rows, columnSchema);
+    private static boolean wanted(String parent, Pattern pattern, String target) {
+        return parent == null || (pattern != null ? pattern.matcher(target).matches() : parent.equalsIgnoreCase(target));
     }
 
     @Override
     public ResultSet getImportedKeys(String catalog, String schema, String table) throws SQLException {
-        return getCrossReference(null, null, null, catalog, schema, table);
+        return result(FK_COLS, FK_TYPES, foreignKeys(table, null));
     }
 
     @Override
     public ResultSet getExportedKeys(String catalog, String schema, String table) throws SQLException {
-        return getCrossReference(null, null, null, catalog, schema, table);
+        return result(FK_COLS, FK_TYPES, foreignKeys(null, table));
     }
 
     @Override
     public ResultSet getCrossReference(String parentCatalog, String parentSchema, String parentTable, String foreignCatalog, String foreignSchema, String foreignTable) throws SQLException {
-        ArrayList<String> columnNames = new ArrayList<>();
-        columnNames.add("PKTABLE_CAT");
-        columnNames.add("PKTABLE_SCHEM");
-        columnNames.add("PKTABLE_NAME");
-        columnNames.add("PKCOLUMN_NAME");
-        columnNames.add("FKTABLE_CAT");
-        columnNames.add("FKTABLE_SCHEM");
-        columnNames.add("FKTABLE_NAME");
-        columnNames.add("FKCOLUMN_NAME");
-        columnNames.add("KEY_SEQ");
-        columnNames.add("UPDATE_RULE");
-        columnNames.add("DELETE_RULE");
-        columnNames.add("FK_NAME");
-        columnNames.add("PK_NAME");
-
-        JSONObject stringType = new JSONObject();
-        stringType.put("type", "TEXT");
-        JSONObject intType = new JSONObject();
-        intType.put("type", "INTEGER");
-
-        JSONArray columnSchema = new JSONArray();
-        // PKTABLE_CAT
-        columnSchema.put(stringType);
-        // PKTABLE_SCHEM
-        columnSchema.put(stringType);
-        // PKTABLE_NAME
-        columnSchema.put(stringType);
-        // PKCOLUMN_NAME
-        columnSchema.put(stringType);
-        // FKTABLE_CAT
-        columnSchema.put(stringType);
-        // FKTABLE_SCHEM
-        columnSchema.put(stringType);
-        // FKTABLE_NAME
-        columnSchema.put(stringType);
-        // FKCOLUMN_NAME
-        columnSchema.put(stringType);
-        // KEY_SEQ
-        columnSchema.put(intType);
-        // UPDATE_RULE
-        columnSchema.put(intType);
-        // DELETE_RULE
-        columnSchema.put(intType);
-        // FK_NAME
-        columnSchema.put(stringType);
-        // PK_NAME
-        columnSchema.put(stringType);
-
-        JSONObject ruleType = new JSONObject();
-        ruleType.put("NO ACTION", DatabaseMetaData.importedKeyNoAction);
-        ruleType.put("CASCADE", DatabaseMetaData.importedKeyCascade);
-        ruleType.put("SET NULL", DatabaseMetaData.importedKeySetNull);
-        ruleType.put("SET DEFAULT", DatabaseMetaData.importedKeySetDefault);
-        ruleType.put("RESTRICT", DatabaseMetaData.importedKeyRestrict);
-
-        JSONObject results = queryDatabase("PRAGMA foreign_key_list(" + foreignTable + ")");
-        JSONArray fkList = results.getJSONArray("results");
-        ArrayList<ArrayList<Object>> rows = new ArrayList<>();
-
-        for (int i = 0; i < fkList.length(); i++) {
-            JSONObject fkItem = fkList.getJSONObject(i);
-
-            ArrayList<Object> row = new ArrayList<>();
-            row.add(null);
-            row.add(null);
-            row.add(fkItem.get("table"));
-            row.add(fkItem.get("to"));
-            row.add(null);
-            row.add(null);
-            row.add(foreignTable);
-            row.add(fkItem.get("from"));
-            row.add(fkItem.get("seq"));
-            row.add(ruleType.get(fkItem.get("on_update").toString()));
-            row.add(ruleType.get(fkItem.get("on_delete").toString()));
-
-            // If null is set, #FAKE_<table>_<number> is set, so <foreignTable>_<id>_<seq> set
-            row.add(foreignTable + "_" + fkItem.get("id").toString() + "_" + fkItem.get("seq").toString());
-            row.add(null);
-
-            rows.add(row);
-        }
-
-        return new D1ResultSet(ApiKey, AccountId, DatabaseUuid, columnNames, rows, columnSchema);
+        return result(FK_COLS, FK_TYPES, foreignKeys(foreignTable, parentTable));
     }
 
-    @Override
-    public ResultSet getTypeInfo() throws SQLException {
-        throw new SQLException("Not implemented: getTypeInfo()");
-    }
+    private static final String[] INDEX_COLS = {"TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "NON_UNIQUE", "INDEX_QUALIFIER", "INDEX_NAME", "TYPE", "ORDINAL_POSITION",
+            "COLUMN_NAME", "ASC_OR_DESC", "CARDINALITY", "PAGES", "FILTER_CONDITION"};
 
     @Override
     public ResultSet getIndexInfo(String catalog, String schema, String table, boolean unique, boolean approximate) throws SQLException {
-        throw new SQLException("Not implemented: getIndexInfo()");
+        List<String> tables = tableNames(table, null, true);
+        List<List<java.util.Map<String, Object>>> lists = pragma("index_list", tables);
+        // A partial unique index (CREATE UNIQUE INDEX ... WHERE ...) only constrains some rows, so it must not pass as a row key.
+        List<Object[]> indexes = new ArrayList<>(); // {table, index name, unique}
+        for (int t = 0; t < tables.size(); t++) {
+            List<java.util.Map<String, Object>> list = lists.get(t);
+            list.sort(java.util.Comparator.comparingLong((java.util.Map<String, Object> i) -> -num(i.get("unique"))).thenComparing(i -> str(i.get("name"))));
+            for (java.util.Map<String, Object> index : list) {
+                boolean isUnique = num(index.get("unique")) != 0 && num(index.get("partial")) == 0;
+                if (unique && !isUnique) continue;
+                indexes.add(new Object[]{tables.get(t), str(index.get("name")), isUnique});
+            }
+        }
+        List<String> indexNames = new ArrayList<>();
+        for (Object[] i : indexes) indexNames.add((String) i[1]);
+        List<List<java.util.Map<String, Object>>> columnLists = pragma("index_xinfo", indexNames); // index_xinfo also gives the sort direction
+        List<Object[]> rows = new ArrayList<>();
+        for (int i = 0; i < indexes.size(); i++) {
+            for (java.util.Map<String, Object> col : columnLists.get(i)) {
+                if (num(col.get("key")) == 0 || col.get("name") == null) continue; // the rowid/aux columns, or an expression rather than a column
+                rows.add(new Object[]{null, null, indexes.get(i)[0], (Boolean) indexes.get(i)[2] ? 0L : 1L, null, indexes.get(i)[1], (long) DatabaseMetaData.tableIndexOther,
+                        num(col.get("seqno")) + 1, col.get("name"), num(col.get("desc")) != 0 ? "D" : "A", 0L, 0L, null});
+            }
+        }
+        return result(INDEX_COLS, new String[]{"TEXT", "TEXT", "TEXT", "INTEGER", "TEXT", "TEXT", "INTEGER", "INTEGER", "TEXT", "TEXT", "INTEGER", "INTEGER", "TEXT"}, rows);
     }
 
     @Override
-    public boolean supportsResultSetType(int type) throws SQLException {
-        return false;
+    public ResultSet getBestRowIdentifier(String catalog, String schema, String table, int scope, boolean nullable) {
+        return empty("SCOPE", "COLUMN_NAME", "DATA_TYPE", "TYPE_NAME", "COLUMN_SIZE", "BUFFER_LENGTH", "DECIMAL_DIGITS", "PSEUDO_COLUMN");
     }
 
     @Override
-    public boolean supportsResultSetConcurrency(int type, int concurrency) throws SQLException {
-        return false;
+    public ResultSet getVersionColumns(String catalog, String schema, String table) {
+        return empty("SCOPE", "COLUMN_NAME", "DATA_TYPE", "TYPE_NAME", "COLUMN_SIZE", "BUFFER_LENGTH", "DECIMAL_DIGITS", "PSEUDO_COLUMN");
     }
 
-    @Override
-    public boolean ownUpdatesAreVisible(int type) throws SQLException {
-        return false;
-    }
+    @Override public ResultSet getProcedures(String c, String s, String p) { return empty("PROCEDURE_CAT", "PROCEDURE_SCHEM", "PROCEDURE_NAME", "REMARKS", "PROCEDURE_TYPE", "SPECIFIC_NAME"); }
+    @Override public ResultSet getProcedureColumns(String c, String s, String p, String col) { return empty("PROCEDURE_CAT", "PROCEDURE_SCHEM", "PROCEDURE_NAME", "COLUMN_NAME"); }
+    @Override public ResultSet getFunctions(String c, String s, String p) { return empty("FUNCTION_CAT", "FUNCTION_SCHEM", "FUNCTION_NAME", "REMARKS", "FUNCTION_TYPE", "SPECIFIC_NAME"); }
+    @Override public ResultSet getFunctionColumns(String c, String s, String p, String col) { return empty("FUNCTION_CAT", "FUNCTION_SCHEM", "FUNCTION_NAME", "COLUMN_NAME"); }
+    @Override public ResultSet getUDTs(String c, String s, String t, int[] types) { return empty("TYPE_CAT", "TYPE_SCHEM", "TYPE_NAME", "CLASS_NAME", "DATA_TYPE", "REMARKS", "BASE_TYPE"); }
+    @Override public ResultSet getSuperTypes(String c, String s, String t) { return empty("TYPE_CAT", "TYPE_SCHEM", "TYPE_NAME", "SUPERTYPE_CAT", "SUPERTYPE_SCHEM", "SUPERTYPE_NAME"); }
+    @Override public ResultSet getSuperTables(String c, String s, String t) { return empty("TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "SUPERTABLE_NAME"); }
+    @Override public ResultSet getTablePrivileges(String c, String s, String t) { return empty("TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "GRANTOR", "GRANTEE", "PRIVILEGE", "IS_GRANTABLE"); }
+    @Override public ResultSet getColumnPrivileges(String c, String s, String t, String col) { return empty("TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "COLUMN_NAME", "GRANTOR", "GRANTEE", "PRIVILEGE", "IS_GRANTABLE"); }
+    @Override public ResultSet getAttributes(String c, String s, String t, String a) { return empty("TYPE_CAT", "TYPE_SCHEM", "TYPE_NAME", "ATTR_NAME"); }
+    @Override public ResultSet getPseudoColumns(String c, String s, String t, String col) { return empty("TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "COLUMN_NAME"); }
+    @Override public ResultSet getClientInfoProperties() { return empty("NAME", "MAX_LEN", "DEFAULT_VALUE", "DESCRIPTION"); }
 
     @Override
-    public boolean ownDeletesAreVisible(int type) throws SQLException {
-        return false;
+    public ResultSet getTypeInfo() {
+        String[] cols = {"TYPE_NAME", "DATA_TYPE", "PRECISION", "LITERAL_PREFIX", "LITERAL_SUFFIX", "CREATE_PARAMS", "NULLABLE", "CASE_SENSITIVE", "SEARCHABLE",
+                "UNSIGNED_ATTRIBUTE", "FIXED_PREC_SCALE", "AUTO_INCREMENT", "LOCAL_TYPE_NAME", "MINIMUM_SCALE", "MAXIMUM_SCALE", "SQL_DATA_TYPE", "SQL_DATETIME_SUB", "NUM_PREC_RADIX"};
+        String[] types = {"TEXT", "INTEGER", "INTEGER", "TEXT", "TEXT", "TEXT", "INTEGER", "INTEGER", "INTEGER", "INTEGER", "INTEGER", "INTEGER", "TEXT", "INTEGER", "INTEGER", "INTEGER", "INTEGER", "INTEGER"};
+        Object[][] defs = {{"INTEGER", Types.BIGINT, 19L, 0L}, {"REAL", Types.DOUBLE, 15L, 0L}, {"TEXT", Types.VARCHAR, 65535L, 1L}, {"BLOB", Types.BLOB, 65535L, 0L},
+                {"NUMERIC", Types.NUMERIC, 15L, 0L}, {"BOOLEAN", Types.BOOLEAN, 1L, 0L}, {"DATE", Types.DATE, 10L, 1L}, {"DATETIME", Types.TIMESTAMP, 23L, 1L},
+                {"VARCHAR", Types.VARCHAR, 65535L, 1L}, {"DECIMAL", Types.DECIMAL, 15L, 0L}};
+        List<Object[]> rows = new ArrayList<>();
+        for (Object[] d : defs) {
+            boolean quoted = (Long) d[3] == 1L;
+            rows.add(new Object[]{d[0], (long) (int) d[1], d[2], quoted ? "'" : null, quoted ? "'" : null, null, (long) typeNullable, 1L, (long) typeSearchable,
+                    0L, 0L, 0L, d[0], 0L, 0L, 0L, 0L, 10L});
+        }
+        return result(cols, types, rows);
     }
 
-    @Override
-    public boolean ownInsertsAreVisible(int type) throws SQLException {
-        return false;
-    }
+    // ---- product / capabilities
 
-    @Override
-    public boolean othersUpdatesAreVisible(int type) throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean othersDeletesAreVisible(int type) throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean othersInsertsAreVisible(int type) throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean updatesAreDetected(int type) throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean deletesAreDetected(int type) throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean insertsAreDetected(int type) throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsBatchUpdates() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public ResultSet getUDTs(String catalog, String schemaPattern, String typeNamePattern, int[] types) throws SQLException {
-        throw new SQLException("Not implemented: getUDTs()");
-    }
-
-    @Override
-    public Connection getConnection() throws SQLException {
-        return null;
-    }
-
-    @Override
-    public boolean supportsSavepoints() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsNamedParameters() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsMultipleOpenResults() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsGetGeneratedKeys() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public ResultSet getSuperTypes(String catalog, String schemaPattern, String typeNamePattern) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public ResultSet getSuperTables(String catalog, String schemaPattern, String tableNamePattern) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public ResultSet getAttributes(String catalog, String schemaPattern, String typeNamePattern, String attributeNamePattern) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public boolean supportsResultSetHoldability(int holdability) throws SQLException {
-        return false;
-    }
-
-    @Override
-    public int getResultSetHoldability() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getDatabaseMajorVersion() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getDatabaseMinorVersion() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getJDBCMajorVersion() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getJDBCMinorVersion() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getSQLStateType() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public boolean locatorsUpdateCopy() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean supportsStatementPooling() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public RowIdLifetime getRowIdLifetime() throws SQLException {
-        return null;
-    }
-
-    @Override
-    public ResultSet getSchemas(String catalog, String schemaPattern) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public boolean supportsStoredFunctionsUsingCallSyntax() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean autoCommitFailureClosesAllResultSets() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public ResultSet getClientInfoProperties() throws SQLException {
-        return null;
-    }
-
-    @Override
-    public ResultSet getFunctions(String catalog, String schemaPattern, String functionNamePattern) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public ResultSet getFunctionColumns(String catalog, String schemaPattern, String functionNamePattern, String columnNamePattern) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public ResultSet getPseudoColumns(String catalog, String schemaPattern, String tableNamePattern, String columnNamePattern) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public boolean generatedKeyAlwaysReturned() throws SQLException {
-        return false;
-    }
+    @Override public Connection getConnection() { return connection; }
+    @Override public String getURL() { return connection.url; }
+    @Override public String getUserName() { return connection.accountId; }
+    @Override public String getDatabaseProductName() { return "SQLite"; }
+    @Override public String getDatabaseProductVersion() { return "SQLite (Cloudflare D1)"; }
+    @Override public int getDatabaseMajorVersion() { return 3; }
+    @Override public int getDatabaseMinorVersion() { return 0; }
+    @Override public String getDriverName() { return "D1 JDBC Driver"; }
+    @Override public String getDriverVersion() { return "2.0.0"; }
+    @Override public int getDriverMajorVersion() { return 2; }
+    @Override public int getDriverMinorVersion() { return 0; }
+    @Override public int getJDBCMajorVersion() { return 4; }
+    @Override public int getJDBCMinorVersion() { return 2; }
+    @Override public String getIdentifierQuoteString() { return "\""; }
+    @Override public String getSearchStringEscape() { return "\\"; }
+    @Override public String getExtraNameCharacters() { return ""; }
+    @Override public String getSQLKeywords() { return "ABORT,AUTOINCREMENT,GLOB,INDEXED,PRAGMA,ROWID,VACUUM,WITHOUT"; }
+    @Override public String getNumericFunctions() { return "abs,max,min,round,random"; }
+    @Override public String getStringFunctions() { return "length,lower,upper,substr,trim,replace,instr"; }
+    @Override public String getSystemFunctions() { return ""; }
+    @Override public String getTimeDateFunctions() { return "date,time,datetime,julianday,strftime"; }
+    @Override public String getSchemaTerm() { return ""; }
+    @Override public String getProcedureTerm() { return ""; }
+    @Override public String getCatalogTerm() { return ""; }
+    @Override public String getCatalogSeparator() { return "."; }
+    @Override public boolean isCatalogAtStart() { return true; }
+    @Override public int getDefaultTransactionIsolation() { return Connection.TRANSACTION_SERIALIZABLE; }
+    @Override public int getResultSetHoldability() { return ResultSet.CLOSE_CURSORS_AT_COMMIT; }
+    @Override public RowIdLifetime getRowIdLifetime() { return RowIdLifetime.ROWID_UNSUPPORTED; }
+    @Override public int getSQLStateType() { return DatabaseMetaData.sqlStateSQL99; }
+    @Override public int getMaxConnections() { return 0; }
+    @Override public boolean isReadOnly() { return connection.isReadOnly(); }
+    @Override public boolean allProceduresAreCallable() { return false; }
+    @Override public boolean allTablesAreSelectable() { return true; }
+    @Override public boolean nullsAreSortedLow() { return true; }
+    @Override public boolean supportsTransactions() { return false; }
+    @Override public boolean supportsAlterTableWithAddColumn() { return true; }
+    @Override public boolean supportsAlterTableWithDropColumn() { return true; }
+    @Override public boolean supportsColumnAliasing() { return true; }
+    @Override public boolean supportsGroupBy() { return true; }
+    @Override public boolean supportsGroupByUnrelated() { return true; }
+    @Override public boolean supportsUnion() { return true; }
+    @Override public boolean supportsUnionAll() { return true; }
+    @Override public boolean supportsOuterJoins() { return true; }
+    @Override public boolean supportsLimitedOuterJoins() { return true; }
+    @Override public boolean supportsFullOuterJoins() { return true; }
+    @Override public boolean supportsNonNullableColumns() { return true; }
+    @Override public boolean supportsMixedCaseIdentifiers() { return true; }
+    @Override public boolean supportsMixedCaseQuotedIdentifiers() { return true; }
+    @Override public boolean supportsOrderByUnrelated() { return true; }
+    @Override public boolean supportsSubqueriesInComparisons() { return true; }
+    @Override public boolean supportsSubqueriesInExists() { return true; }
+    @Override public boolean supportsSubqueriesInIns() { return true; }
+    @Override public boolean supportsCorrelatedSubqueries() { return true; }
+    @Override public boolean supportsExpressionsInOrderBy() { return true; }
+    @Override public boolean supportsMultipleResultSets() { return true; }
+    @Override public boolean supportsMultipleOpenResults() { return false; }
+    @Override public boolean supportsBatchUpdates() { return true; }
+    @Override public boolean supportsGetGeneratedKeys() { return true; }
+    @Override public boolean supportsStatementPooling() { return false; }
+    @Override public boolean supportsResultSetType(int type) { return type == ResultSet.TYPE_FORWARD_ONLY || type == ResultSet.TYPE_SCROLL_INSENSITIVE; }
+    @Override public boolean supportsResultSetConcurrency(int type, int concurrency) { return concurrency == ResultSet.CONCUR_READ_ONLY && supportsResultSetType(type); }
+    @Override public boolean supportsResultSetHoldability(int holdability) { return holdability == ResultSet.CLOSE_CURSORS_AT_COMMIT; }
+    @Override public boolean supportsSchemasInDataManipulation() { return false; }
+    @Override public boolean supportsCatalogsInDataManipulation() { return false; }
+    @Override public boolean supportsSelectForUpdate() { return false; }
+    @Override public boolean supportsLikeEscapeClause() { return true; }
+    @Override public boolean supportsConvert() { return false; }
+    @Override public boolean supportsANSI92EntryLevelSQL() { return true; }
+    @Override public boolean supportsDataDefinitionAndDataManipulationTransactions() { return false; }
+    @Override public boolean supportsDataManipulationTransactionsOnly() { return false; }
+    @Override public boolean dataDefinitionCausesTransactionCommit() { return false; }
+    @Override public boolean dataDefinitionIgnoredInTransactions() { return false; }
+    @Override public boolean supportsStoredProcedures() { return false; }
+    @Override public boolean supportsSavepoints() { return false; }
+    @Override public boolean supportsNamedParameters() { return false; }
+    @Override public boolean supportsMultipleTransactions() { return false; }
+    @Override public boolean supportsOpenCursorsAcrossCommit() { return false; }
+    @Override public boolean supportsOpenStatementsAcrossCommit() { return true; }
+    @Override public boolean usesLocalFiles() { return false; }
+    @Override public boolean usesLocalFilePerTable() { return false; }
+    @Override public boolean storesMixedCaseIdentifiers() { return true; }
+    @Override public boolean autoCommitFailureClosesAllResultSets() { return false; }
 
     @Override
     public <T> T unwrap(Class<T> iface) throws SQLException {
-        return null;
+        if (iface.isInstance(this)) return iface.cast(this);
+        throw new SQLException("Not a wrapper for " + iface.getName());
     }
 
     @Override
-    public boolean isWrapperFor(Class<?> iface) throws SQLException {
-        return false;
+    public boolean isWrapperFor(Class<?> iface) {
+        return iface.isInstance(this);
     }
 }

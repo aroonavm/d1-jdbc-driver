@@ -1,51 +1,55 @@
+> **Experimental.** This is a fork of [isaac-mcfadyen/d1-jdbc-driver](https://github.com/isaac-mcfadyen/d1-jdbc-driver), made because I ran into
+> multiple issues using the original (no grid editing in DBeaver, failing introspection, missing prepared statements). It works for me
+> against my own D1 databases in DBeaver, but it needs a lot more testing. Developers should try it carefully first, on a copy or a
+> staging database and preferably with a read-only token, before pointing it at anything that matters.
+
 # D1 JDBC Driver
 
-**A JDBC driver for [Cloudflare's D1 Database](https://blog.cloudflare.com/introducing-d1/) product!**
+A JDBC driver for [Cloudflare D1](https://developers.cloudflare.com/d1/), usable from DBeaver, DataGrip and other JDBC tools.
 
-JDBC is the technology that drives popular database tools such as Jetbrains' database functionality integrated into their editors and [Datagrip](https://www.jetbrains.com/datagrip/), their standalone DB editor.
+- Result columns come from D1's `/raw` endpoint, so any `SELECT` works (column subsets, `DISTINCT`, joins with duplicate names, expressions, empty results).
+- Real `PreparedStatement` (parameters, batches, generated keys, BLOB parameters), so editing rows in a tool's table grid works.
+- Introspection: tables, views, columns (types, sizes, nullability), primary keys, foreign keys (both directions), indexes.
+- Clear errors: wrong token, account or database ID fail when connecting, with D1's own message.
 
-These tools all require a JDBC driver, an adapter that interfaces between the GUI and the Database.
+## Limitations
 
-The D1 JDBC Driver interfaces between these IDEs and Cloudflare's D1, and provides:
-- 🔍 Powerful and automatic schema introspection capabilities
-- ✍️ SQL statement execution, along with auto-formatted results
-- 🔠 Support for all of the Datatype Affinities that SQLite supports (NUMERIC, TEXT, etc)
+- `setMaxRows` (what DBeaver uses for paging) is pushed down as `LIMIT n` for plain SELECTs; other statements return their whole result.
 
-Known issues:
-- Editing data directly via the table-like interface is not supported. *Editing data via SQL is still supported.*
-- Foreign keys are not currently shown in the introspection window, although they are still there and working as normal.
+- No transactions across requests (the REST API has none); `setAutoCommit(false)` is refused. Batches run statement by statement.
+- A query returns its whole result in one response; use `LIMIT` on large tables.
+- Tables without a primary key cannot be edited in a grid (D1 exposes no row identity to the driver).
+- Dates are read from ISO-8601 text or epoch numbers and shown as UTC. Values written back from a date editor are ISO-8601 text, so
+  editing a date column that stores epoch numbers changes its storage format; declare such columns `INTEGER` to edit them as numbers.
+  Julian-day numbers (`julianday()`) are not recognised as dates. In a time zone with daylight saving, a stored time that falls in the
+  local clock change hour cannot be represented by `java.sql.Timestamp` and shifts by an hour if edited.
+- D1's API carries numbers as JavaScript numbers, exact only up to 2^53 (9007199254740991). The driver sends larger integer parameters as
+  text, which SQLite stores and compares exactly in INTEGER columns, but larger integers in results arrive rounded; select them with
+  `CAST(col AS TEXT)` to see the exact value. (Into a column declared without a type, such a parameter is stored as text.)
+- A read-only connection (`Connection.setReadOnly(true)`, DBeaver's "Read-only connection") refuses everything except SELECT, VALUES,
+  EXPLAIN and reading PRAGMAs.
 
-For more info and to get help, join us on the [Cloudflare Developers
-Discord](https://discord.gg/cloudflaredev)!
+## Install
 
-Installation instructions:
-1. Download the latest release of the D1 JDBC Driver from [here](https://github.com/isaac-mcfadyen/d1-jdbc-driver/releases).  
-2. Move the .jar file to somewhere on your computer where you can store it permanently.  
-3. Open Datagrip (or another Jetbrains tool) and add a new Database Driver. (Figure 1)
-4. Name it D1 JDBC Driver. Click on the plus sign beside Driver Files, select Custom JARs, then navigate to and choose the downloaded .jar file. 
-5. Select `org.isaacmcfadyen.D1Driver` from the dropdown. (Figure 2)
-6. Go to the Options tab, scroll down to the bottom, and change the Dialect to SQLite. *This is required for proper auto-complete functionality.*  (Figure 3)
-7. Go to the Data Sources panel, add a new Data Source, and select D1 JDBC Driver as the source. (Figure 4)
-8. Enter the URL, in the format `jdbc:d1://<UUID>` where `<UUID>` is the ID of the D1 database you were given at creation. For the User field, enter your Cloudflare Account ID, and for the Password field enter an [API Token](https://dash.cloudflare.com/?to=/profile/api-tokens) with the D1 Edit scope. (Figure 5)
-9. Hit Test Connection. If all is good, you should see a green message saying that the connection succeeded! If it failed, try going back through these steps and making sure you didn't make a typo. If you need help, join us on the [Cloudflare Developers
-Discord](https://discord.gg/cloudflaredev). (Figure 6)
+1. Build with `mvn package` (JDK 17+). `target/d1-jdbc-driver-<version>.jar` contains everything it needs.
+2. Add a driver in your tool: class `org.isaacmcfadyen.D1Driver`, URL template `jdbc:d1://{database}`.
+   In DataGrip set the SQL dialect to SQLite. In DBeaver use the *Generic* provider (Database > Driver Manager > New).
+3. Connect: URL `jdbc:d1://<database-id>`, user = Cloudflare **Account ID**, password = an [API token](https://dash.cloudflare.com/profile/api-tokens) with the **D1 Edit** permission.
 
-Figure 1:  
-<img width="224" alt="Figure 1" src="https://user-images.githubusercontent.com/6243993/177220616-a1c0555c-e54e-475d-b667-c0a9b327ce78.png">
+Optional URL parameters (or driver properties): `debug=<file.log>` appends every statement (SQL text, including any literal values, but no bound parameter values or credentials) and a result summary to that file; `endpoint=<api base url>` (default `https://api.cloudflare.com/client/v4`); `accountId` and `apiToken` may be given instead of user/password.
 
-Figure 2:  
-<img width="803" alt="Selecting Driver Class" src="https://user-images.githubusercontent.com/6243993/177220676-ba7b3598-d79e-4178-a495-cf2680c7c6e9.png">
+## Source layout
 
-Figure 3:  
-<img width="799" alt="Selecting Dialect" src="https://user-images.githubusercontent.com/6243993/177220738-1a1b277a-8d91-470c-ad6c-b61c59b786fb.png">
+`src/main/java/org/isaacmcfadyen/base/Unsupported*.java` are boilerplate derived from the `java.sql` interfaces: every method throws
+`SQLFeatureNotSupportedException` (or returns a neutral default for `DatabaseMetaData` capability flags). The driver classes extend them
+and override what D1 supports. Update them if the JDBC interfaces change; put driver behaviour in the subclasses, not here.
 
-Figure 4:  
-<img width="286" alt="Selecting Data Source" src="https://user-images.githubusercontent.com/6243993/177220780-c28e6f56-b4b5-47ad-a3d1-0d113e5f1830.png">
+## Tests
 
-Figure 5:  
-<img width="798" alt="Example of Authentication" src="https://user-images.githubusercontent.com/6243993/177220872-78a4b7a3-568b-4926-a544-63d10ee631a9.png">
+`mvn test` runs the driver against `FakeD1Server` (src/test), an HTTP server that speaks D1's `/raw` protocol on top of a real SQLite database. It can also be run by hand to try a tool without touching a real database:
 
-Figure 6:  
-<img width="362" alt="Connection Succeeded" src="https://user-images.githubusercontent.com/6243993/177220909-ec0250fa-4dc2-4abf-a27a-37aff8592c5c.png">
+    java -cp <test-classpath> org.isaacmcfadyen.FakeD1Server 18787 /tmp/fake.db acct secret
 
+## Credits
 
+Ideas reused from open pull requests #7/#13/#14 (SQLite-compatible product name, local answers for the PRAGMAs D1 forbids, hiding `_cf_KV`, prepared statements and key metadata for grid editing).

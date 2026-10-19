@@ -1,195 +1,70 @@
 package org.isaacmcfadyen;
 
-import net.sf.jsqlparser.parser.CCJSqlParserUtil;
-import net.sf.jsqlparser.statement.Statement;
-import net.sf.jsqlparser.statement.select.Select;
-import net.sf.jsqlparser.util.TablesNamesFinder;
-import org.json.JSONArray;
-import org.json.JSONObject;
+import org.isaacmcfadyen.base.UnsupportedResultSetMetaData;
 
-import java.lang.reflect.Type;
-import java.sql.Array;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Types;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.Objects;
 
-public class D1ResultSetMetaData extends D1Queryable implements ResultSetMetaData {
-    private final ArrayList<String> columnNames;
-    private final ArrayList<ArrayList<Object>> rows;
-    private JSONArray columnSchema = new JSONArray();
+final class D1ResultSetMetaData extends UnsupportedResultSetMetaData {
+    private final String[] labels;
+    private final String[] typeNames;
+    private final int[] types;
+    private final String[] tables;
+    private final int[] nullable;
 
-    D1ResultSetMetaData(
-            String ApiKey,
-            String AccountId,
-            String DatabaseUuid,
-            ArrayList<String> columns,
-            ArrayList<ArrayList<Object>> rows,
-            JSONArray columnSchema
-    ) throws SQLException {
-        super(ApiKey, AccountId, DatabaseUuid);
-        this.columnNames = columns;
-        this.rows = rows;
-        this.columnSchema = columnSchema;
+    /** @param tables source table per column ("" for computed columns), or null; @param nullable ResultSetMetaData.columnNullable* per column, or null. */
+    D1ResultSetMetaData(String[] labels, String[] typeNames, String[] tables, int[] nullable) {
+        this.labels = labels;
+        this.typeNames = typeNames;
+        this.tables = tables;
+        this.nullable = nullable;
+        this.types = new int[typeNames.length];
+        for (int i = 0; i < types.length; i++) types[i] = D1Types.sqlType(typeNames[i]);
     }
 
-
-    @Override
-    public int getColumnCount() throws SQLException {
-        return columnNames.size();
+    boolean isFloatingPoint(int index) {
+        return types[index] == Types.REAL || types[index] == Types.FLOAT || types[index] == Types.DOUBLE;
     }
 
-    @Override
-    public boolean isAutoIncrement(int column) throws SQLException {
-        // TODO: check for primary key
-        return false;
+    private int check(int column) throws SQLException {
+        if (column < 1 || column > labels.length) throw new SQLException("Column index out of range: " + column, "S1002");
+        return column - 1;
     }
 
-    @Override
-    public boolean isCaseSensitive(int column) throws SQLException {
-        JSONObject columnSchema = this.columnSchema.getJSONObject(column - 1);
-        String columnType = columnSchema.getString("type");
-        return columnType.equals("TEXT")
-                || columnType.contains("CHAR")
-                || columnType.contains("CLOB");
+    @Override public int getColumnCount() { return labels.length; }
+    @Override public String getColumnLabel(int column) throws SQLException { return labels[check(column)]; }
+    @Override public String getColumnName(int column) throws SQLException { return labels[check(column)]; }
+    @Override public int getColumnType(int column) throws SQLException { return types[check(column)]; }
+    @Override public String getColumnTypeName(int column) throws SQLException { return typeNames[check(column)]; }
+    @Override public String getColumnClassName(int column) throws SQLException { return D1Types.className(types[check(column)]); }
+    @Override public String getTableName(int column) throws SQLException { int i = check(column); return tables == null ? "" : tables[i]; }
+    @Override public String getSchemaName(int column) throws SQLException { check(column); return ""; }
+    @Override public String getCatalogName(int column) throws SQLException { check(column); return ""; }
+    @Override public boolean isAutoIncrement(int column) { return false; }
+    @Override public boolean isCaseSensitive(int column) { return true; }
+    @Override public boolean isSearchable(int column) { return true; }
+    @Override public boolean isCurrency(int column) { return false; }
+    @Override public int isNullable(int column) throws SQLException { int i = check(column); return nullable == null ? ResultSetMetaData.columnNullableUnknown : nullable[i]; }
+    @Override public boolean isSigned(int column) throws SQLException {
+        int t = types[check(column)];
+        return t == Types.BIGINT || t == Types.INTEGER || t == Types.REAL || t == Types.DOUBLE || t == Types.NUMERIC || t == Types.DECIMAL;
     }
-
-    @Override
-    public boolean isSearchable(int column) throws SQLException {
-        return true;
-    }
-
-    @Override
-    public boolean isCurrency(int column) throws SQLException {
-        return false;
-    }
-
-    @Override
-    public int isNullable(int column) throws SQLException {
-        JSONObject columnSchema = this.columnSchema.getJSONObject(column - 1);
-        return columnSchema.getInt("notnull") == 0 ?
-                ResultSetMetaData.columnNullable
-                : ResultSetMetaData.columnNoNulls;
-    }
-
-    @Override
-    public boolean isSigned(int column) throws SQLException {
-
-        JSONObject columnSchema = this.columnSchema.getJSONObject(column - 1);
-        String type = columnSchema.getString("type");
-        return !Objects.equals(type, "TEXT")
-                && !type.contains("CHAR")
-                && !type.contains("BLOB")
-                && type.length() > 0;
-    }
-
-    @Override
-    public int getColumnDisplaySize(int column) throws SQLException {
-        int longestLength = 0;
-        for (ArrayList<Object> row : rows) {
-            if (row.get(column).toString().length() > longestLength) {
-                longestLength = row.get(column).toString().length();
-            }
-        }
-        return longestLength;
-    }
-
-    @Override
-    public String getColumnLabel(int column) throws SQLException {
-        return columnNames.get(column - 1);
-    }
-
-    @Override
-    public String getColumnName(int column) throws SQLException {
-        return columnNames.get(column - 1);
-    }
-
-    @Override
-    public String getSchemaName(int column) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public int getPrecision(int column) throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getScale(int column) throws SQLException {
-        ArrayList<Object> row = rows.get(0);
-        Object value = row.get(column - 1);
-        Type type = value.getClass();
-
-        if (type == Double.class) {
-            return value.toString().split("\\.")[1].length();
-        } else {
-            return 0;
-        }
-    }
-
-    @Override
-    public String getTableName(int column) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public String getCatalogName(int column) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public int getColumnType(int column) throws SQLException {
-        JSONObject columnSchema = this.columnSchema.getJSONObject(column - 1);
-        String type = columnSchema.getString("type");
-
-        if (type.contains("CHAR") || type.contains("CLOB") || type.contains("TEXT")) {
-            return Types.VARCHAR;
-        } else if (type.contains("INT")) {
-            return Types.INTEGER;
-        } else if (type.contains("REAL") || type.contains("DOB") || type.contains("FLOA")) {
-            return Types.DOUBLE;
-        } else if (type.contains("BLOB") || type.length() == 0) {
-            return Types.BLOB;
-        } else {
-            return Types.NUMERIC;
-        }
-    }
-
-    @Override
-    public String getColumnTypeName(int column) throws SQLException {
-        JSONObject columnSchema = this.columnSchema.getJSONObject(column - 1);
-        return columnSchema.getString("type");
-    }
-
-    @Override
-    public boolean isReadOnly(int column) throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean isWritable(int column) throws SQLException {
-        return true;
-    }
-
-    @Override
-    public boolean isDefinitelyWritable(int column) throws SQLException {
-        return true;
-    }
-
-    @Override
-    public String getColumnClassName(int column) throws SQLException {
-        throw new SQLException("Not implemented: getColumnClassName(int column)");
-    }
+    @Override public int getColumnDisplaySize(int column) { return 40; }
+    @Override public int getPrecision(int column) { return 0; }
+    @Override public int getScale(int column) { return 0; }
+    @Override public boolean isReadOnly(int column) { return false; }
+    @Override public boolean isWritable(int column) { return true; }
+    @Override public boolean isDefinitelyWritable(int column) { return false; }
 
     @Override
     public <T> T unwrap(Class<T> iface) throws SQLException {
-        return null;
+        if (iface.isInstance(this)) return iface.cast(this);
+        throw new SQLException("Not a wrapper for " + iface.getName());
     }
 
     @Override
-    public boolean isWrapperFor(Class<?> iface) throws SQLException {
-        return false;
+    public boolean isWrapperFor(Class<?> iface) {
+        return iface.isInstance(this);
     }
 }

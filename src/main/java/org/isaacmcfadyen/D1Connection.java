@@ -1,286 +1,148 @@
 package org.isaacmcfadyen;
 
-import org.json.JSONObject;
-import org.json.JSONArray;
+import org.isaacmcfadyen.base.UnsupportedConnection;
 
-import java.sql.*;
-import java.util.Map;
+import java.sql.CallableStatement;
+import java.sql.Connection;
+import java.sql.DatabaseMetaData;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLClientInfoException;
+import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
+import java.sql.SQLWarning;
+import java.sql.Statement;
+import java.util.Collections;
 import java.util.Properties;
 import java.util.concurrent.Executor;
 
-public class D1Connection extends D1Queryable implements Connection {
-    private boolean closed = false;
+public final class D1Connection extends UnsupportedConnection {
+    final D1Client client;
+    final String url;
+    final String accountId;
+    private volatile boolean closed;
+    private boolean readOnly;
 
-    D1Connection(String ApiKey, String AccountId, String DatabaseUuid) {
-        super(ApiKey, AccountId, DatabaseUuid);
-    }
-
-    @Override
-    public Statement createStatement() throws SQLException {
-        return new D1Statement(ApiKey, AccountId, DatabaseUuid, this);
-    }
-
-    @Override
-    public PreparedStatement prepareStatement(String sql) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public CallableStatement prepareCall(String sql) throws SQLException {
-        throw new SQLException("Not implemented: prepareCall(String sql)");
-    }
-
-    @Override
-    public String nativeSQL(String sql) throws SQLException {
-        throw new SQLException("Not implemented: nativeSQL(String sql)");
-    }
-
-    @Override
-    public void setAutoCommit(boolean b) throws SQLException {
-    }
-
-    @Override
-    public boolean getAutoCommit() throws SQLException {
-        return true;
-    }
-
-    @Override
-    public void commit() throws SQLException {
-    }
-
-    @Override
-    public void rollback() throws SQLException {
-    }
-
-    @Override
-    public void close() throws SQLException {
-        synchronized (this) {
-            closed = true;
+    D1Connection(D1Client client, String url, String accountId) throws SQLException {
+        this.client = client;
+        this.url = url;
+        this.accountId = accountId;
+        // Fail at connect time on a wrong token, account or database ID rather than on the first query.
+        try (Statement s = createStatement()) {
+            s.execute("SELECT 1");
         }
     }
 
-    @Override
-    public boolean isClosed() throws SQLException {
+    /**
+     * Column info of `PRAGMA table_info`, cached per connection; null when the table is unknown. Cleared by DDL on this connection and
+     * re-read after TABLE_INFO_TTL_MILLIS, since migrations run elsewhere (wrangler) can change a table while a client stays connected.
+     */
+    private final java.util.Map<String, java.util.Map<String, Object[]>> tableInfo = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<String, Long> tableInfoReadAt = new java.util.concurrent.ConcurrentHashMap<>();
+    static volatile long TABLE_INFO_TTL_MILLIS = 60_000;
+
+    java.util.Map<String, Object[]> tableInfo(String table) {
+        return tableInfo(table, false);
+    }
+
+    /** @param refresh ignore the cached copy: the table may have changed since (another session, a migration). */
+    java.util.Map<String, Object[]> tableInfo(String table, boolean refresh) {
+        String key = table.toLowerCase(java.util.Locale.ROOT);
+        Long readAt = tableInfoReadAt.get(key);
+        boolean fresh = readAt != null && System.currentTimeMillis() - readAt < TABLE_INFO_TTL_MILLIS;
+        java.util.Map<String, Object[]> cached = refresh || !fresh ? null : tableInfo.get(key);
+        if (cached != null) return cached.isEmpty() ? null : cached;
+        java.util.Map<String, Object[]> columns = new java.util.LinkedHashMap<>();
+        try {
+            D1Result r = client.execute("PRAGMA table_info(\"" + table.replace("\"", "\"\"") + "\")", java.util.List.of(), 0, new D1Client.Call()).get(0);
+            for (Object[] row : r.rows) columns.put(String.valueOf(row[1]).toLowerCase(java.util.Locale.ROOT), row); // cid, name, type, notnull, dflt, pk
+        } catch (SQLException | RuntimeException e) {
+            return null; // metadata is a nicety; the query itself already worked
+        }
+        tableInfo.put(key, columns);
+        tableInfoReadAt.put(key, System.currentTimeMillis());
+        return columns.isEmpty() ? null : columns;
+    }
+
+    void schemaChanged() {
+        tableInfo.clear();
+        tableInfoReadAt.clear();
+    }
+
+    boolean isClosedQuietly() {
         return closed;
     }
 
-    @Override
-    public DatabaseMetaData getMetaData() throws SQLException {
-        return new D1DatabaseMetaData(ApiKey, AccountId, DatabaseUuid, this);
+    private void open() throws SQLException {
+        if (closed) throw new SQLException("Connection is closed", "08003");
     }
 
-    @Override
-    public void setReadOnly(boolean readOnly) throws SQLException {
+    @Override public Statement createStatement() throws SQLException { open(); return new D1Statement(this); }
+    @Override public Statement createStatement(int type, int concurrency) throws SQLException { return createStatement(); }
+    @Override public Statement createStatement(int type, int concurrency, int holdability) throws SQLException { return createStatement(); }
+    @Override public PreparedStatement prepareStatement(String sql) throws SQLException { open(); return new D1PreparedStatement(this, sql); }
+    @Override public PreparedStatement prepareStatement(String sql, int type, int concurrency) throws SQLException { return prepareStatement(sql); }
+    @Override public PreparedStatement prepareStatement(String sql, int type, int concurrency, int holdability) throws SQLException { return prepareStatement(sql); }
+    @Override public PreparedStatement prepareStatement(String sql, int autoGeneratedKeys) throws SQLException { return prepareStatement(sql); }
+    @Override public PreparedStatement prepareStatement(String sql, int[] columnIndexes) throws SQLException { return prepareStatement(sql); }
+    @Override public PreparedStatement prepareStatement(String sql, String[] columnNames) throws SQLException { return prepareStatement(sql); }
+    @Override public CallableStatement prepareCall(String sql) throws SQLException { throw new SQLFeatureNotSupportedException("D1 has no stored procedures"); }
+    @Override public String nativeSQL(String sql) { return sql; }
 
+    // D1's REST API runs each request on its own; there is no session to hold a transaction open.
+    @Override public boolean getAutoCommit() { return true; }
+    @Override public void setAutoCommit(boolean autoCommit) throws SQLException {
+        if (!autoCommit) throw new SQLFeatureNotSupportedException("D1 over REST has no multi-request transactions");
     }
+    @Override public void commit() {}
+    @Override public void rollback() {}
+    @Override public int getTransactionIsolation() { return Connection.TRANSACTION_SERIALIZABLE; }
+    @Override public void setTransactionIsolation(int level) {}
+
+    @Override public void close() { closed = true; }
+    @Override public boolean isClosed() { return closed; }
+    @Override public void abort(Executor executor) { closed = true; }
 
     @Override
-    public boolean isReadOnly() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public void setCatalog(String catalog) throws SQLException {
-
-    }
-
-    @Override
-    public String getCatalog() throws SQLException {
-        return null;
-    }
-
-    @Override
-    public void setTransactionIsolation(int level) throws SQLException {
-
-    }
-
-    @Override
-    public int getTransactionIsolation() throws SQLException {
-        return Connection.TRANSACTION_NONE;
-    }
-
-    @Override
-    public SQLWarning getWarnings() throws SQLException {
-        return null;
-    }
-
-    @Override
-    public void clearWarnings() throws SQLException {
-
-    }
-
-    @Override
-    public Statement createStatement(int resultSetType, int resultSetConcurrency) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public PreparedStatement prepareStatement(String sql, int resultSetType, int resultSetConcurrency) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public CallableStatement prepareCall(String sql, int resultSetType, int resultSetConcurrency) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public Map<String, Class<?>> getTypeMap() throws SQLException {
-        return null;
-    }
-
-    @Override
-    public void setTypeMap(Map<String, Class<?>> map) throws SQLException {
-
-    }
-
-    @Override
-    public void setHoldability(int holdability) throws SQLException {
-
-    }
-
-    @Override
-    public int getHoldability() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public Savepoint setSavepoint() throws SQLException {
-        return null;
-    }
-
-    @Override
-    public Savepoint setSavepoint(String name) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public void rollback(Savepoint savepoint) throws SQLException {}
-
-    @Override
-    public void releaseSavepoint(Savepoint savepoint) throws SQLException {}
-
-    @Override
-    public Statement createStatement(int resultSetType, int resultSetConcurrency, int resultSetHoldability) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public PreparedStatement prepareStatement(String sql, int resultSetType, int resultSetConcurrency, int resultSetHoldability) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public CallableStatement prepareCall(String sql, int resultSetType, int resultSetConcurrency, int resultSetHoldability) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public PreparedStatement prepareStatement(String sql, int autoGeneratedKeys) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public PreparedStatement prepareStatement(String sql, int[] columnIndexes) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public PreparedStatement prepareStatement(String sql, String[] columnNames) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public Clob createClob() throws SQLException {
-        return null;
-    }
-
-    @Override
-    public Blob createBlob() throws SQLException {
-        return null;
-    }
-
-    @Override
-    public NClob createNClob() throws SQLException {
-        return null;
-    }
-
-    @Override
-    public SQLXML createSQLXML() throws SQLException {
-        return null;
-    }
-
-    @Override
-    public boolean isValid(int timeout) throws SQLException {
-        try {
-            queryDatabase("SELECT 'keep alive'");
+    public boolean isValid(int timeout) {
+        if (closed) return false;
+        try (Statement s = createStatement()) {
+            s.setQueryTimeout(Math.max(timeout, 0));
+            s.execute("SELECT 1");
             return true;
-        } catch (Exception e) {
+        } catch (SQLException e) {
             return false;
         }
     }
 
-    @Override
-    public void setClientInfo(String name, String value) throws SQLClientInfoException {
-
-    }
-
-    @Override
-    public void setClientInfo(Properties properties) throws SQLClientInfoException {
-
-    }
-
-    @Override
-    public String getClientInfo(String name) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public Properties getClientInfo() throws SQLException {
-        return null;
-    }
-
-    @Override
-    public Array createArrayOf(String typeName, Object[] elements) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public Struct createStruct(String typeName, Object[] attributes) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public void setSchema(String schema) throws SQLException {
-    }
-
-    @Override
-    public String getSchema() throws SQLException {
-        return null;
-    }
-
-    @Override
-    public void abort(Executor executor) throws SQLException {
-        this.close();
-    }
-
-    @Override
-    public void setNetworkTimeout(Executor executor, int milliseconds) throws SQLException {
-
-    }
-
-    @Override
-    public int getNetworkTimeout() throws SQLException {
-        return 10;
-    }
+    @Override public DatabaseMetaData getMetaData() throws SQLException { open(); return new D1DatabaseMetaData(this); }
+    @Override public boolean isReadOnly() { return readOnly; }
+    @Override public void setReadOnly(boolean readOnly) { this.readOnly = readOnly; }
+    @Override public String getCatalog() { return null; }
+    @Override public void setCatalog(String catalog) {}
+    @Override public String getSchema() { return null; }
+    @Override public void setSchema(String schema) {}
+    @Override public SQLWarning getWarnings() { return null; }
+    @Override public void clearWarnings() {}
+    @Override public int getHoldability() { return ResultSet.CLOSE_CURSORS_AT_COMMIT; }
+    @Override public void setHoldability(int holdability) {}
+    @Override public java.util.Map<String, Class<?>> getTypeMap() { return Collections.emptyMap(); }
+    @Override public void setTypeMap(java.util.Map<String, Class<?>> map) {}
+    @Override public Properties getClientInfo() { return new Properties(); }
+    @Override public String getClientInfo(String name) { return null; }
+    @Override public void setClientInfo(String name, String value) throws SQLClientInfoException {}
+    @Override public void setClientInfo(Properties properties) throws SQLClientInfoException {}
+    @Override public void setNetworkTimeout(Executor executor, int milliseconds) {}
+    @Override public int getNetworkTimeout() { return 0; }
 
     @Override
     public <T> T unwrap(Class<T> iface) throws SQLException {
-        return null;
+        if (iface.isInstance(this)) return iface.cast(this);
+        throw new SQLException("Not a wrapper for " + iface.getName());
     }
 
     @Override
-    public boolean isWrapperFor(Class<?> iface) throws SQLException {
-        return false;
+    public boolean isWrapperFor(Class<?> iface) {
+        return iface.isInstance(this);
     }
 }
